@@ -1,0 +1,86 @@
+import torch
+!pip3 install torch torchvision
+device = 'cpu' # Default device
+
+if torch.cuda.is_available():
+  device = torch.device("cuda")
+else:
+  device = torch.device("cpu")
+
+import sys
+print(sys.version) # To know python's version
+import torch.nn  as nn # A convenience
+import csv
+!pip install -U -q PyDrive
+from pydrive.auth import GoogleAuth
+from pydrive.drive import GoogleDrive
+from google.colab import auth
+from google.colab import files
+from oauth2client.client import GoogleCredentials
+
+# 1. Authenticate and create the PyDrive client.
+auth.authenticate_user()
+gauth = GoogleAuth()
+gauth.credentials = GoogleCredentials.get_application_default()
+drive = GoogleDrive(gauth)
+
+#2. Get the file
+downloaded = drive.CreateFile({'id':'1pEHw0TakxHcgt0tjJgQ2zT8xkZxL-SHn'}) # replace the id with id of file you want to access
+downloaded.GetContentFile('mnist_train.csv')
+
+
+downloaded = drive.CreateFile({'id':'1-O7gmz5WPiYuj8Uq0nAtWZ5U8n_pvzq3'}) # replace the id with id of file you want to access
+downloaded.GetContentFile('model.pth') 
+
+downloaded = drive.CreateFile({'id':'1K34bo-N3k4xeR3wyPQKVfx9NX4NJW2ny'}) # replace the id with id of file you want to access
+downloaded.GetContentFile('weights.pth')
+
+inputFin = []
+outputFin = []
+with open('mnist_train.csv') as csv_file:
+  csv_reader = csv.reader(csv_file, delimiter=',')
+  for row in csv_reader:
+    #print(row)
+    tempOutput = [0.0] * 10
+    tempOutput[int(row[0])] = 1.0
+    #print(tempOutput)
+    outputFin.append(tempOutput)
+    tempInput = [float(row[x])/255.0 for x in range(1, len(row))]
+    #print(tempInput)
+    inputFin.append(tempInput)
+  #print(f'Processed {line_count} lines.')
+
+#zo = [0.0,1.0] # zo = zero-one
+ins = torch.tensor(inputFin)
+expected = torch.tensor(outputFin)
+nodeCts = [len(ins[0]), 300, 100, 10]
+
+netSpec = [torch.nn.Sigmoid() if i%2 else
+           torch.nn.Linear(nodeCts[i//2], nodeCts[1+i//2],bias=i<1)
+           for i in range(2*len(nodeCts)-2)]
+#mynn = torch.nn.Sequential(*netSpec, torch.nn.Linear(10,10,bias=False))
+mynn = torch.load('model.pth')
+optimizer = torch.optim.SGD(mynn.parameters(), lr=0.5)
+criterion = torch.nn.MSELoss()
+
+for epoch in range(20000+1):
+  y_pred = mynn(ins) # Forward propagation
+  loss = criterion(y_pred, expected) # Compute and print error
+  if not epoch%500 or epoch<10:
+    print('epoch: ', epoch,' loss: ', loss.item())
+    torch.save(mynn.state_dict(), 'weights.pth') # save the weights
+    torch.save(mynn, 'model.pth')
+    torch.save(optimizer.state_dict(), 'optimizer.pth')
+  optimizer.zero_grad() # Zero the gradients
+  loss.backward() # Back propagation
+  optimizer.step() # Update the weights
+
+for k,v in mynn.state_dict().items():
+  print(k,v)
+torch.save(mynn.state_dict(), 'weights.pth') # save the weights
+torch.save(mynn, 'model.pth')
+torch.save(optimizer.state_dict(), 'optimizer.pth')
+files.download('weights.pth')
+files.download('model.pth')
+files.download('optimizer.pth')
+mynn = torch.load('model.pth')
